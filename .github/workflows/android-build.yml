@@ -10,63 +10,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
-      # ✅ Cloner repo
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ✅ Node
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      # ✅ Dépendances React
-      - name: Install deps
+      - name: Install dependencies
         run: npm install
 
-      # ✅ Build web
-      - name: Build app
+      - name: Build web
         run: npm run build
 
-      # ✅ Créer projet mobile propre
-      - name: Create mobile project
+      - name: Setup mobile project
         run: |
           mkdir mobile
           cd mobile
           npm init -y
-
-          # ✅ INSTALLATION COMPLET
           npm install @capacitor/core @capacitor/cli @capacitor/android
-
-          # ✅ INIT AVEC web-dir (CRITIQUE)
           npx cap init dosco com.dosco.game --web-dir=www
-
-          # ✅ Copier dist vers www
           mkdir www
           cp -r ../dist/* www/
-
-          # ✅ SYNC AVANT ADD
-          npx cap sync
-
-          # ✅ AJOUT ANDROID (APRÈS SYNC)
           npx cap add android
 
-      # ✅ Java
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # ✅ Build APK
       - name: Build APK
         run: |
           cd mobile/android
           chmod +x gradlew
           ./gradlew assembleDebug
 
-      # ✅ Export APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
