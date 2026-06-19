@@ -33,14 +33,10 @@ jobs:
           mkdir mobile
           cd mobile
           npm init -y
-
           npm install @capacitor/core@5.7.8 @capacitor/cli@5.7.8 @capacitor/android@5.7.8
-
           npx cap init dosco com.dosco.game --web-dir=www
-
           mkdir www
           cp -r ../dist/* www/
-
           npx cap add android
 
       - name: Disable Jetifier and stabilize Android Gradle properties
@@ -66,101 +62,86 @@ jobs:
           echo "----- mobile/android/gradle.properties -----"
           cat gradle.properties
 
-      - name: Force safe BouncyCastle version in all Gradle build scripts
+      - name: Create BouncyCastle resolution script safely
         run: |
           cd mobile
 
-          cat > /tmp/bouncycastle-resolution.gradle <<'EOF'
-buildscript {
-    configurations.classpath {
-        resolutionStrategy.eachDependency { details ->
-            if (details.requested.group == "org.bouncycastle") {
-                if (details.requested.name == "bcprov-jdk18on") {
-                    details.useVersion "1.77"
-                    details.because "Avoid Java 21 multi-release classes in bcprov 1.78+ / 1.79 during Gradle buildscript instrumentation"
-                }
-                if (details.requested.name == "bcpkix-jdk18on") {
-                    details.useVersion "1.77"
-                    details.because "Keep BouncyCastle components aligned"
-                }
-                if (details.requested.name == "bcutil-jdk18on") {
-                    details.useVersion "1.77"
-                    details.because "Keep BouncyCastle components aligned"
-                }
-            }
-        }
-    }
-}
-EOF
+          printf '%s\n' \
+            'buildscript {' \
+            '    configurations.classpath {' \
+            '        resolutionStrategy.eachDependency { details ->' \
+            '            if (details.requested.group == "org.bouncycastle") {' \
+            '                if (details.requested.name == "bcprov-jdk18on") {' \
+            '                    details.useVersion "1.77"' \
+            '                    details.because "Avoid Java 21 multi-release classes in BouncyCastle during Gradle buildscript instrumentation"' \
+            '                }' \
+            '                if (details.requested.name == "bcpkix-jdk18on") {' \
+            '                    details.useVersion "1.77"' \
+            '                    details.because "Keep BouncyCastle components aligned"' \
+            '                }' \
+            '                if (details.requested.name == "bcutil-jdk18on") {' \
+            '                    details.useVersion "1.77"' \
+            '                    details.because "Keep BouncyCastle components aligned"' \
+            '                }' \
+            '            }' \
+            '        }' \
+            '    }' \
+            '}' \
+            > /tmp/bouncycastle-resolution.gradle
 
-          for f in \
-            android/build.gradle \
-            android/app/build.gradle \
-            node_modules/@capacitor/android/capacitor/build.gradle
+          echo "----- /tmp/bouncycastle-resolution.gradle -----"
+          cat /tmp/bouncycastle-resolution.gradle
+
+      - name: Inject BouncyCastle resolution into Gradle files
+        run: |
+          cd mobile
+
+          for f in android/build.gradle android/app/build.gradle node_modules/@capacitor/android/capacitor/build.gradle
           do
             if [ -f "$f" ]; then
               echo "Patching $f"
-              cat /tmp/bouncycastle-resolution.gradle "$f" > "$f.tmp"
-              mv "$f.tmp" "$f"
+              tmpfile=$(mktemp)
+              cat /tmp/bouncycastle-resolution.gradle "$f" > "$tmpfile"
+              mv "$tmpfile" "$f"
+            else
+              echo "File not found, skipped: $f"
             fi
           done
 
-          echo "----- Confirm patched files -----"
-          grep -R "bcprov-jdk18on" -n android node_modules/@capacitor/android || true
-          grep -R "BouncyCastle" -n android node_modules/@capacitor/android || true
+          echo "----- Confirm BouncyCastle patch -----"
+          grep -R "Avoid Java 21" -n android node_modules/@capacitor/android || true
 
-      - name: Patch Android Gradle Plugin to stable version
+      - name: Patch Android Gradle Plugin version
         run: |
           cd mobile/android
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
+          for file in $(find . -name "build.gradle" -o -name "settings.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle.kts")
+          do
+            echo "Checking $file"
 
-          targets = []
-          for pattern in ["build.gradle", "settings.gradle", "build.gradle.kts", "settings.gradle.kts"]:
-              targets.extend(Path(".").rglob(pattern))
+            sed -i -E 's/com\.android\.tools\.build:gradle:[0-9.]+/com.android.tools.build:gradle:8.3.2/g' "$file"
 
-          for p in targets:
-              text = p.read_text()
-              original = text
+            sed -i -E 's/id\("com\.android\.application"\)[[:space:]]+version[[:space:]]+"[0-9.]+"/id("com.android.application") version "8.3.2"/g' "$file"
 
-              text = re.sub(
-                  r"com\.android\.tools\.build:gradle:[0-9.]+",
-                  "com.android.tools.build:gradle:8.3.2",
-                  text
-              )
+            sed -i -E "s/id 'com\.android\.application' version '[0-9.]+'/id 'com.android.application' version '8.3.2'/g" "$file"
+          done
 
-              text = re.sub(
-                  r'id\("com\.android\.application"\)\s+version\s+"[0-9.]+"',
-                  'id("com.android.application") version "8.3.2"',
-                  text
-              )
+          echo "----- Gradle files after AGP patch -----"
+          find . -maxdepth 4 -type f \( -name "build.gradle" -o -name "settings.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle.kts" \) -print
 
-              text = re.sub(
-                  r"id 'com\.android\.application' version '[0-9.]+'",
-                  "id 'com.android.application' version '8.3.2'",
-                  text
-              )
-
-              if text != original:
-                  print(f"Patched {p}")
-                  p.write_text(text)
-          PY
-
-      - name: Replace Gradle wrapper file for safety
+      - name: Replace Gradle wrapper safely
         run: |
           cd mobile/android
 
           mkdir -p gradle/wrapper
 
-          cat > gradle/wrapper/gradle-wrapper.properties <<'EOF'
-distributionBase=GRADLE_USER_HOME
-distributionPath=wrapper/dists
-distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip
-zipStoreBase=GRADLE_USER_HOME
-zipStorePath=wrapper/dists
-EOF
+          printf '%s\n' \
+            'distributionBase=GRADLE_USER_HOME' \
+            'distributionPath=wrapper/dists' \
+            'distributionUrl=https\://services.gradle.org/distributions/gradle-8.7-bin.zip' \
+            'zipStoreBase=GRADLE_USER_HOME' \
+            'zipStorePath=wrapper/dists' \
+            > gradle/wrapper/gradle-wrapper.properties
 
           echo "----- gradle-wrapper.properties -----"
           cat gradle/wrapper/gradle-wrapper.properties
@@ -193,8 +174,7 @@ EOF
           echo "----- Gradle version -----"
           gradle --version
 
-          echo "----- Check that we are NOT using ./gradlew -----"
-
+          echo "----- Build APK -----"
           gradle assembleDebug --no-daemon --stacktrace --no-build-cache --warning-mode all
 
       - name: Upload APK
