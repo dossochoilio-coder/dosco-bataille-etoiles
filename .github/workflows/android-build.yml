@@ -11,12 +11,52 @@ jobs:
 
     steps:
 
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
           node-version: 18
 
-      - run: npm install
+      # ✅ INSTALL PROJET PRINCIPAL
+      - name: Install deps
+        run: npm install
 
-      - run: npm run build
+      # ✅ BUILD REACT
+      - name: Build app
+        run: npm run build
+
+      # ✅ CRÉER PROJET MOBILE ISOLÉ
+      - name: Create mobile project
+        run: |
+          mkdir mobile
+          cd mobile
+          npm init -y
+          npm install @capacitor/core @capacitor/cli
+
+          npx cap init dosco com.dosco.game
+          mkdir www
+          cp -r ../dist/* www/
+
+          npx cap add android
+
+      # ✅ BUILD ANDROID
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Build APK
+        run: |
+          cd mobile/android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      # ✅ EXPORT APK
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dosco-apk
+          path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
