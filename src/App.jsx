@@ -6559,7 +6559,6 @@ const LegalScreen=({onNav,lang="fr"})=>{
       </div>
     </div>
   );
-};
 
 export default function DOSCOApp(){
   const[authUser,setAuthUser]=useState(()=>authDB.getSession());
