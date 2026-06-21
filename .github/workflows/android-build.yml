@@ -17,18 +17,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
+          # Pas de cache npm — pas de package-lock.json dans le repo
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install
 
-      # ── Étape clé : créer le dossier dist avec le standalone HTML ──
+      # ── Étape clé : créer dist depuis DOSCO_Standalone.html ──
       - name: Prepare dist from DOSCO_Standalone.html
         run: |
           mkdir -p dist
-          # Copier le standalone HTML comme index.html de l'app
           cp DOSCO_Standalone.html dist/index.html
-          echo "✅ dist/index.html créé depuis DOSCO_Standalone.html"
+          echo "dist/index.html créé depuis DOSCO_Standalone.html"
           ls -la dist/
 
       - name: Sync Capacitor Android
