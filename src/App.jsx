@@ -1256,6 +1256,7 @@ const getPlayerStats = (playerId) => {
     wins: target.wins, losses: target.losses, pts: target.pts,
   };
 };
+};
 
 const getMoves=(coord,board)=>{const star=board[coord];if(!star)return{moves:[],captures:[]};const dirs=DIRS[star.color][star.type];const{c,r}=toRC(coord);const moves=[],captures=[];for(const[dc,dr]of dirs){const dest=toCoord(c+dc,r+dr);if(!dest)continue;const occ=board[dest];if(!occ)moves.push(dest);else if(occ.color!==star.color)captures.push(dest);}return{moves,captures};};
 const getAllCaptures=(color,board)=>{const res={};for(const[coord,star]of Object.entries(board)){if(star.color!==color)continue;const{captures}=getMoves(coord,board);if(captures.length>0)res[coord]=captures;}return res;};
@@ -2360,13 +2361,7 @@ const LoginScreen=({onNav,onLogin,lang="fr"})=>{
   const handleOAuth=async(provider)=>{
     setError("");setLoading(true);
     try{audio.sfxClick();}catch(e){}
-    // === WORLD CLASS MOBILE INTEGRATION NOTE ===
-    // En production Android/iOS (React Native / Capacitor) :
-    // - Google : @react-native-google-signin/google-signin + Firebase Auth ou Supabase
-    // - Facebook : react-native-fbsdk-next ou expo-auth-session
-    // Récupérer le vrai {email, name, photo} du provider, puis appeler authOAuthLogin(provider, {email,name})
-    // Cela permet SSO cross-device et liaison de compte.
-    // (Ancienne ligne commentée ci-dessous pour référence)
+    // En production : ouvrir le flux OAuth du fournisseur et récupérer le profil vérifié.
     await new Promise(r=>setTimeout(r,500));
     const result=authOAuthLogin(provider,null);
     setLoading(false);
@@ -4720,30 +4715,15 @@ const OnlineScreen=({onNav,user,lang="fr",setSeason})=>{
   const requestRematch=()=>{
     try{audio.sfxClick();}catch(e){}
     if(vsAIOnline || !(netStatus==="online" && DOSCONet.isConfigured())){
-      // IA ou hors-ligne/démo : revanche immédiate (simulation fluide)
-      setRematchMsg(tUI("Demande de revanche envoyée…",lang));
-      setTimeout(()=>{
-        setRematchMsg(null);
-        // Simulation "envoyée à l'adversaire" : en vrai backend, le serveur émet "rematch_offered" au socket de l'autre joueur
-        // Ici on simule l'acceptation automatique pour UX démo (ou montrer incomingRematch)
-        if (Math.random() > 0.25) {
-          startGame();
-        } else {
-          setIncomingRematch(true); // L'adversaire "propose" aussi
-        }
-      }, 680);
+      // IA ou hors-ligne : revanche immédiate
+      startGame();
       return;
     }
-    // === PRODUCTION BACKEND REQUIREMENT (world-class real-time) ===
-    // Le serveur doit : 
-    // 1. Recevoir "rematch_request" {gameId}
-    // 2. Trouver l'autre joueur via gameId dans la room/matchmaking
-    // 3. lui émettre via WS: {type:"rematch_offered", from: uid, gameId}
-    // 4. Gérer "rematch_response" et relancer une game_start commune.
-    // Client: les listeners dans OnlineGameScreen (lignes ~4662) + un service global de notif push (FCM) quand app en background.
+    // Adversaire humain réel : demander une revanche au serveur (les écouteurs
+    // persistants rematchAccepted/rematchDeclined gèrent la réponse)
     setRematchMsg(tUI("Demande de revanche envoyée…",lang));
     try{ DOSCONet.requestRematch(); }catch(e){}
-    // Si pas de réponse serveur en 12s → fallback
+    // Délai d'attente : si pas de réponse en 12s, adversaire indisponible
     setTimeout(()=>{
       setRematchMsg(m=> m===tUI("Demande de revanche envoyée…",lang)
         ? tUI("L'adversaire n'est pas disponible pour une revanche.",lang) : m);
@@ -5783,40 +5763,9 @@ const TournamentScreen=({onNav,user,lang="fr"})=>{
   // Inscription persistée à la semaine en cours
   const weekId=(typeof isoWeekId==="function")?isoWeekId():"wk";
   const[joined,setJoined]=useState(()=>{try{return localStorage.getItem("dosco_tourn_join_v1")===weekId;}catch{return false;}});
-
-  // === AUTO-INSCRIPTION WORLD-CLASS + NOTIFICATIONS ===
-  // Les joueurs connectés (authentifiés) sont automatiquement inscrits aux tournois/ligues éligibles
-  // et reçoivent une notification push/in-app les invitant à participer (simulation + backend réel via FCM topics "tournament_weekly")
-  useEffect(()=>{
-    if (user && user.uid && !joined) {
-      // Auto-join pour utilisateurs authentifiés (sauf guests sans progression)
-      const isEligible = (user.wins || 0) >= 0; // ou seuil basé sur planète/rang
-      if (isEligible) {
-        try{localStorage.setItem("dosco_tourn_join_v1",weekId);}catch(e){}
-        setJoined(true);
-        // Simuler réception de notif d'invitation des "joueurs connectés"
-        setTimeout(()=>{
-          try{ 
-            notifSystem.add({
-              type:"tournament", 
-              title: tUI("INVITATION TOURNOI",lang) || "Invitation Tournoi Stellaire",
-              body: "1240 joueurs de votre ligue sont déjà inscrits. Rejoignez la bataille !"
-            });
-            // Mettre à jour le badge hamburger (sécurisé)
-            if (typeof window !== "undefined" && window.setNotifCount) window.setNotifCount(notifSystem.unreadCount());
-          }catch(e){}
-        }, 1450);
-      }
-    }
-  },[user,joined,weekId,lang]);
-
   const join=()=>{
     try{localStorage.setItem("dosco_tourn_join_v1",weekId);}catch(e){}
     setJoined(true);try{audio.sfxConnect();}catch(e){}
-    // Notifier les autres "joueurs connectés" (en prod: backend broadcast ou topic pub/sub)
-    try{ 
-      notifSystem.add({type:"social", title:"Inscription confirmée", body:"Votre place dans le bracket est réservée. Bonne chance !"});
-    }catch(e){}
   };
   // Bracket à 8 : toi + 7 joueurs de ta constellation (sinon places libres)
   const slots=[{name:user.name,me:true},...arena.slice(0,7).map(p=>({name:p.name,id:p.id}))];
@@ -6859,19 +6808,7 @@ export default function DOSCOApp(){
   },[muted,volLevel]);
   const refreshSeason=useCallback(()=>{try{setSeason(getSeason());}catch(e){}setNotifCount(notifSystem.unreadCount());},[]);
   const handleLogin=useCallback((user)=>{setAuthUser(user);const firstTime=!hasSeenTutorial();setScreen(firstTime?"tutorial":"home");try{audio.sfxVictory();}catch(e){};try{MusicPlayer.play(firstTime?"menu":"victory",false);}catch(e){}analytics.track("login",{uid:user.uid,isGuest:user.isGuest});try{CloudSync.pull().then(()=>refreshSeason());}catch(e){}refreshSeason();},[]);
-  const handleLogout=useCallback(()=>{ 
-    try{ 
-      authLogout(); 
-      setAuthUser(null); 
-      setMenuOpen(false); 
-      // Reset critical states for clean logout (world-class UX)
-      setSeason(getSeason()); 
-      setNotifCount(0);
-      setScreen("login"); 
-      try{MusicPlayer.play("menu",false);}catch(e){} 
-      analytics.track("logout"); 
-    }catch(e){ console.warn("Logout error",e); setScreen("login"); }
-  },[]);
+  const handleLogout=useCallback(()=>{authLogout();setAuthUser(null);setMenuOpen(false);setScreen("login");try{MusicPlayer.play("menu",false);}catch(e){}analytics.track("logout");},[]);
   const handleGameEnd=useCallback((result)=>{if(result?.winner){const s=getSeason();if(s.pts<50)setTimeout(()=>setPostLossModal({ptsLeft:s.pts}),2000);}refreshSeason();try{CloudSync.autoPush();}catch(e){}},[]);
   const handlePurchase=useCallback(async(productId)=>{analytics.track("purchase_start",{productId});const result=await iapPurchase(productId,authUser?.uid||"guest");if(result.success){analytics.track("purchase_complete",{productId,price:IAP_PRODUCTS[productId]?.price,stars:result.receipt.starsGranted});notifSystem.add({type:"purchase",title:"Achat confirmé !",body:`+${result.receipt.starsGranted} étoiles créditées.`});setNotifCount(notifSystem.unreadCount());refreshSeason();}else{analytics.track("purchase_failed",{productId,error:result.error});}return result;},[authUser]);
 
@@ -6987,10 +6924,158 @@ export default function DOSCOApp(){
         </div>
       </div>
     );
-  
+  }
+
   return(
     <div style={{position:"fixed",inset:0,background:`radial-gradient(ellipse at center,#0a1226,${C.void})`,overflow:"hidden",
-      fontFamily:"'Exo 2',sans-serif",userSelect:"none",WebkitUse
-                }
-    }
-    >
+      fontFamily:"'Exo 2',sans-serif",userSelect:"none",WebkitUserSelect:"none",
+      display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <GlobalStyles/>
+
+      {/* Cadre applicatif centré : plein écran sur mobile, cadre 480px sur grand écran */}
+      <div style={{position:"relative",width:"100%",height:"100%",maxWidth:480,
+        margin:"0 auto",overflow:"hidden",boxShadow:"0 0 60px rgba(0,0,0,.6)",
+        display:"flex",flexDirection:"column"}}>
+
+        {/* Parallaxe cosmique de fond (profondeur, dérive lente) */}
+        <div style={{position:"absolute",inset:"-4%",zIndex:0,pointerEvents:"none",
+          animation:"parallaxDrift 26s ease-in-out infinite",
+          background:`radial-gradient(circle at 20% 15%, ${C.blue}0a, transparent 42%), radial-gradient(circle at 82% 78%, ${C.cyan}08, transparent 40%)`}}/>
+
+        {/* Contenu */}
+        <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+          <div key={screen} style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",overflow:"hidden",
+            animation:(screen==="game"||screen==="vsai"||screen==="online"||screen==="splash")
+              ? "none"
+              : "screenIn .42s cubic-bezier(.22,1,.36,1) both",
+            willChange:"transform,opacity"}}>
+            {renderScreen()}
+          </div>
+          {showDailyModal&&screen!=="tutorial"&&screen!=="game"&&screen!=="vsai"&&screen!=="online"&&<DailyRewardModal reward={dailyReward} lang={lang} onClose={()=>{setShowDailyModal(false);refreshSeason();}}/>}
+          {postLossModal&&<PostLossShopModal ptsLeft={postLossModal.ptsLeft} lang={lang} onClose={()=>setPostLossModal(null)} onShop={()=>{setPostLossModal(null);nav("shop");}}/>}
+        </div>
+
+        {/* Bouton hamburger — toujours visible, coin bas-droit */}
+      {screen!=="splash"&&screen!=="login"&&(
+        <button
+          onClick={()=>{try{audio.sfxClick();}catch(e){}setMenuOpen(m=>!m);}}
+          style={{
+            position:"fixed",bottom:20,right:20,
+            width:48,height:48,borderRadius:24,
+            background:"rgba(74,158,255,.18)",
+            border:`1.5px solid ${C.blue}60`,
+            backdropFilter:"blur(12px)",
+            WebkitBackdropFilter:"blur(12px)",
+            display:"flex",alignItems:"center",justifyContent:"center",
+            zIndex:500,cursor:"pointer",
+            boxShadow:`0 0 16px ${C.blue}30, 0 4px 24px rgba(0,0,0,.5)`,
+            transition:"all .2s",
+            transform:menuOpen?"rotate(45deg)":"rotate(0deg)"}}>
+          <span style={{fontSize:20,lineHeight:1,color:C.white}}>
+            {menuOpen?"✕":"☰"}
+          </span>
+          {/* Badge notification */}
+          {notifCount>0&&!menuOpen&&(
+            <div style={{position:"absolute",top:-4,right:-4,
+              background:C.red,color:"#fff",fontSize:9,fontWeight:900,
+              minWidth:16,height:16,borderRadius:8,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              boxShadow:`0 0 6px ${C.red}`,animation:"badgePop .4s cubic-bezier(.34,1.56,.64,1) both"}}>
+              {notifCount>9?"9+":notifCount}
+            </div>
+          )}
+        </button>
+      )}
+
+      {/* Menu slide-up */}
+      {menuOpen&&(
+        <div style={{
+          position:"fixed",inset:0,zIndex:490,
+          background:"rgba(3,4,10,.7)",
+          backdropFilter:"blur(4px)",
+          WebkitBackdropFilter:"blur(4px)"}
+        } onClick={()=>setMenuOpen(false)}>
+          <div
+            onClick={e=>e.stopPropagation()}
+            style={{
+              position:"absolute",bottom:0,left:0,right:0,
+              background:"rgba(6,10,22,.97)",
+              borderTop:`1px solid ${C.blue}28`,
+              borderRadius:"24px 24px 0 0",
+              padding:"8px 0 32px",
+              maxHeight:"75vh",
+              overflowY:"auto",
+              animation:"slideUp .25s cubic-bezier(.34,1.56,.64,1)"}}>
+
+            {/* Handle bar */}
+            <div style={{width:40,height:4,background:"rgba(74,158,255,.2)",
+              borderRadius:2,margin:"4px auto 16px",flexShrink:0}}/>
+
+            {/* Infos utilisateur */}
+            <div style={{display:"flex",alignItems:"center",gap:12,
+              padding:"0 20px 14px",
+              borderBottom:`1px solid rgba(74,158,255,.08)`}}>
+              <div style={{animation:"rotS 20s linear infinite"}}>
+                <StarSVG type="Sirus" color={C.white} size={36} glow/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,color:C.white,fontWeight:700,
+                  fontFamily:"'Orbitron',monospace",letterSpacing:1}}>
+                  {USER.name}
+                </div>
+                <div style={{fontSize:10,color:C.gold,marginTop:1}}>
+                  ⭐ {season?.stars||100} étoiles
+                </div>
+              </div>
+              {/* Audio */}
+              <button onClick={toggleAudio}
+                style={{background:"rgba(74,158,255,.1)",border:`1px solid ${C.blue}38`,
+                  borderRadius:10,padding:"6px 10px",color:C.blue,cursor:"pointer",fontSize:18}}>
+                {muted?"🔇":"🎵"}
+              </button>
+            </div>
+
+            {/* Grille de navigation */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",
+              gap:2,padding:"8px 8px"}}>
+              {NAV_ITEMS.map(item=>(
+                <button key={item.s}
+                  onClick={()=>nav(item.s)}
+                  style={{
+                    display:"flex",flexDirection:"column",
+                    alignItems:"center",justifyContent:"center",
+                    gap:4,padding:"14px 8px",
+                    background:screen===item.s
+                      ?"rgba(74,158,255,.18)":"transparent",
+                    border:`1px solid ${screen===item.s?C.blue+"50":"transparent"}`,
+                    borderRadius:12,cursor:"pointer",
+                    transition:"all .15s"}}>
+                  <span style={{fontSize:22}}>{item.i}</span>
+                  <span style={{fontSize:9,color:screen===item.s?C.blue:C.dim,
+                    fontFamily:"'Orbitron',monospace",letterSpacing:.5,
+                    fontWeight:screen===item.s?700:400}}>
+                    {item.l}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Déconnexion */}
+            {authUser&&(
+              <div style={{padding:"8px 20px 0",borderTop:`1px solid rgba(74,158,255,.08)`}}>
+                <button onClick={handleLogout}
+                  style={{width:"100%",padding:"10px",background:"rgba(255,68,102,.08)",
+                    border:`1px solid ${C.red}25`,borderRadius:10,color:C.red,
+                    fontSize:10,fontWeight:700,letterSpacing:2,cursor:"pointer",
+                    fontFamily:"'Orbitron',monospace"}}>
+                  SE DÉCONNECTER
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      </div>
+    </div>
+  );
+};
