@@ -21,17 +21,34 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # Supprimer tous les configs TS/JS — on utilise uniquement .json
-      - name: Use JSON Capacitor config only
+      # Supprimer configs TS/JS conflictuels
+      - name: Clean Capacitor configs
         run: |
           rm -f capacitor.config.ts
           rm -f capacitor.config.js
+
+      # Créer le config JSON directement dans le workflow
+      - name: Create capacitor.config.json
+        run: |
+          cat > capacitor.config.json << 'CAPEOF'
+          {
+            "appId": "com.dosco.bataille.etoiles",
+            "appName": "DOSCO",
+            "webDir": "dist",
+            "bundledWebRuntime": false,
+            "android": {
+              "allowMixedContent": true
+            }
+          }
+          CAPEOF
+          echo "capacitor.config.json créé:"
+          cat capacitor.config.json
 
       - name: Prepare dist
         run: |
           mkdir -p dist
           cp DOSCO_Standalone.html dist/index.html
-          echo "dist/index.html prêt ($(wc -c < dist/index.html) bytes)"
+          echo "dist/index.html prêt"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -46,7 +63,6 @@ jobs:
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
-            echo "Plateforme Android ajoutée"
           else
             echo "Dossier android déjà présent"
           fi
