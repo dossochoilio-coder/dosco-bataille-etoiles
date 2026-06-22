@@ -28,25 +28,8 @@ jobs:
 
       - name: Create capacitor.config.json
         run: |
-          cat > capacitor.config.json << 'CAPEOF'
-          {
-            "appId": "com.dosco.labatailledesetoiles",
-            "appName": "DOSCO",
-            "webDir": "dist",
-            "bundledWebRuntime": false,
-            "android": {
-              "allowMixedContent": true,
-              "captureInput": true
-            },
-            "plugins": {
-              "SplashScreen": {
-                "launchShowDuration": 2000,
-                "backgroundColor": "#03040a",
-                "showSpinner": false
-              }
-            }
-          }
-          CAPEOF
+          printf '{"appId":"com.dosco.labatailledesetoiles","appName":"DOSCO","webDir":"dist","bundledWebRuntime":false,"android":{"allowMixedContent":true},"plugins":{"SplashScreen":{"launchShowDuration":2000,"backgroundColor":"#03040a","showSpinner":false}}}' > capacitor.config.json
+          cat capacitor.config.json
 
       - name: Prepare dist
         run: |
@@ -77,19 +60,8 @@ jobs:
       - name: Configure network security
         run: |
           mkdir -p android/app/src/main/res/xml
-          cat > android/app/src/main/res/xml/network_security_config.xml << 'XMLEOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <network-security-config>
-            <base-config cleartextTrafficPermitted="true">
-              <trust-anchors><certificates src="system"/></trust-anchors>
-            </base-config>
-            <domain-config cleartextTrafficPermitted="true">
-              <domain includeSubdomains="true">localhost</domain>
-              <domain includeSubdomains="true">capacitor.localhost</domain>
-              <domain includeSubdomains="true">dosco-backend-production.up.railway.app</domain>
-            </domain-config>
-          </network-security-config>
-          XMLEOF
+          printf '<?xml version="1.0" encoding="utf-8"?><network-security-config><base-config cleartextTrafficPermitted="true"><trust-anchors><certificates src="system"/></trust-anchors></base-config><domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">localhost</domain><domain includeSubdomains="true">capacitor.localhost</domain><domain includeSubdomains="true">dosco-backend-production.up.railway.app</domain></domain-config></network-security-config>' \
+            > android/app/src/main/res/xml/network_security_config.xml
 
       - name: Add monetization dependencies
         run: |
@@ -109,41 +81,60 @@ jobs:
 
       - name: Create upload keystore
         run: |
-          keytool -genkey -v \
+          keytool -genkeypair -v \
             -keystore dosco-upload.keystore \
-            -alias dosco-key \
+            -alias doscokey \
             -keyalg RSA \
             -keysize 2048 \
             -validity 10000 \
-            -storepass doscostore2026 \
-            -keypass doscokey2026 \
-            -dname "CN=DOSCO, OU=Game, O=DOSCO Games, L=Yaounde, S=Centre, C=CM"
-          echo "Keystore cree avec succes"
-          ls -la dosco-upload.keystore
+            -storepass doscoUpload2026 \
+            -keypass doscoUpload2026 \
+            -dname "CN=DOSCO Game, OU=Mobile, O=Dosco, L=Yaounde, S=Centre, C=CM"
+          echo "Keystore cree:"
+          keytool -list -keystore dosco-upload.keystore -storepass doscoUpload2026
 
-      - name: Configure signing in build.gradle
+      - name: Write keystore.properties
+        run: |
+          KEYSTORE_PATH="$(pwd)/dosco-upload.keystore"
+          printf 'storeFile=%s\nstorePassword=doscoUpload2026\nkeyAlias=doscokey\nkeyPassword=doscoUpload2026\n' \
+            "$KEYSTORE_PATH" > android/keystore.properties
+          echo "keystore.properties:"
+          cat android/keystore.properties
+
+      - name: Configure signing via keystore.properties
         run: |
           GRADLE_FILE="android/app/build.gradle"
-          KEYSTORE_ABS="$(pwd)/dosco-upload.keystore"
-          cat >> "$GRADLE_FILE" << GRADLEOF
-
-          android {
+          # Ajouter la lecture du keystore.properties en haut du fichier
+          PROPS_BLOCK='def keystorePropertiesFile = rootProject.file("keystore.properties")\ndef keystoreProperties = new Properties()\nif (keystorePropertiesFile.exists()) { keystoreProperties.load(new FileInputStream(keystorePropertiesFile)) }\n'
+          sed -i "1s|^|${PROPS_BLOCK}|" "$GRADLE_FILE"
+          # Ajouter signingConfig dans android {}
+          python3 - << 'PYEOF'
+          import re
+          with open("android/app/build.gradle", "r") as f:
+              content = f.read()
+          signing_block = """
               signingConfigs {
                   release {
-                      storeFile file("${KEYSTORE_ABS}")
-                      storePassword "doscostore2026"
-                      keyAlias "dosco-key"
-                      keyPassword "doscokey2026"
+                      storeFile file(keystoreProperties['storeFile'])
+                      storePassword keystoreProperties['storePassword']
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
                   }
               }
-              buildTypes {
-                  release {
-                      signingConfig signingConfigs.release
-                  }
-              }
-          }
-          GRADLEOF
-          echo "Signature configuree"
+          """
+          release_signing = "signingConfig signingConfigs.release"
+          # Insérer signingConfigs avant buildTypes
+          content = content.replace("buildTypes {", signing_block + "\n    buildTypes {", 1)
+          # Ajouter signingConfig dans release buildType
+          content = re.sub(
+              r'(release \{)',
+              r'\1\n            ' + release_signing,
+              content, count=1
+          )
+          with open("android/app/build.gradle", "w") as f:
+              f.write(content)
+          print("build.gradle configure avec succes")
+          PYEOF
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
@@ -152,22 +143,27 @@ jobs:
         run: cd android && ./gradlew bundleRelease --stacktrace
 
       - name: Build Release APK
+        if: success()
         run: cd android && ./gradlew assembleRelease --stacktrace
 
       - name: List build outputs
+        if: always()
         run: |
-          echo "=== Fichiers generes ==="
-          find android/app/build/outputs -name "*.aab" -o -name "*.apk" 2>/dev/null | xargs -I{} sh -c 'echo "  $(du -h {} | cut -f1)  {}"'
+          find android/app/build/outputs -name "*.aab" -o -name "*.apk" 2>/dev/null | while read f; do
+            echo "$(du -h $f | cut -f1)  $f"
+          done
 
-      - name: Upload keystore - SAUVEGARDEZ CE FICHIER
+      - name: Upload keystore SAUVEGARDEZ CE FICHIER
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: KEYSTORE-dosco-upload-SAUVEGARDEZ
+          name: KEYSTORE-SAUVEGARDEZ
           path: dosco-upload.keystore
           retention-days: 90
 
       - name: Upload AAB Play Store
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: dosco-release-aab-playstore
           path: android/app/build/outputs/bundle/release/app-release.aab
@@ -176,6 +172,7 @@ jobs:
 
       - name: Upload APK signe
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: dosco-release-apk-signe
           path: android/app/build/outputs/apk/release/app-release.apk
