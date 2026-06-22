@@ -43,9 +43,6 @@ jobs:
                 "launchShowDuration": 2000,
                 "backgroundColor": "#03040a",
                 "showSpinner": false
-              },
-              "AdMob": {
-                "appId": "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
               }
             }
           }
@@ -99,10 +96,8 @@ jobs:
       - name: Add monetization dependencies
         run: |
           GRADLE_FILE="android/app/build.gradle"
-          # Google Play Billing
           grep -q "billing" "$GRADLE_FILE" || \
             sed -i '/dependencies {/a\    implementation "com.android.billingclient:billing:6.0.1"' "$GRADLE_FILE" || true
-          # AdMob
           grep -q "play-services-ads" "$GRADLE_FILE" || \
             sed -i '/dependencies {/a\    implementation "com.google.android.gms:play-services-ads:22.6.0"' "$GRADLE_FILE" || true
           echo "Dependances monetisation ajoutees"
@@ -121,21 +116,20 @@ jobs:
       - name: Build Release APK
         run: cd android && ./gradlew assembleRelease --stacktrace
 
-      - name: Build Debug APK (fallback)
-        if: failure()
-        run: cd android && ./gradlew assembleDebug --stacktrace
+      - name: Verify APK exists
+        run: |
+          APK_PATH="android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          if [ -f "$APK_PATH" ]; then
+            echo "APK Release trouve: $(du -h $APK_PATH | cut -f1)"
+          else
+            echo "APK Release non trouve, tentative debug..."
+            cd android && ./gradlew assembleDebug --stacktrace
+          fi
 
       - name: Upload Release APK
         uses: actions/upload-artifact@v4
         with:
           name: dosco-release-apk
           path: android/app/build/outputs/apk/release/app-release-unsigned.apk
-          retention-days: 30
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: dosco-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
           retention-days: 30
