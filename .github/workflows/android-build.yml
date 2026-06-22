@@ -42,13 +42,14 @@ jobs:
               "SplashScreen": {
                 "launchShowDuration": 2000,
                 "backgroundColor": "#03040a",
-                "showSpinner": false,
-                "androidScaleType": "CENTER_CROP"
+                "showSpinner": false
+              },
+              "AdMob": {
+                "appId": "ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX"
               }
             }
           }
           CAPEOF
-          cat capacitor.config.json
 
       - name: Prepare dist
         run: |
@@ -95,18 +96,21 @@ jobs:
           </network-security-config>
           XMLEOF
 
-      - name: Add Google Play Billing dependency
+      - name: Add monetization dependencies
         run: |
           GRADLE_FILE="android/app/build.gradle"
-          if ! grep -q "play-services-ads" "$GRADLE_FILE" 2>/dev/null; then
+          # Google Play Billing
+          grep -q "billing" "$GRADLE_FILE" || \
             sed -i '/dependencies {/a\    implementation "com.android.billingclient:billing:6.0.1"' "$GRADLE_FILE" || true
-            echo "Google Play Billing ajoutee au build.gradle"
-          fi
+          # AdMob
+          grep -q "play-services-ads" "$GRADLE_FILE" || \
+            sed -i '/dependencies {/a\    implementation "com.google.android.gms:play-services-ads:22.6.0"' "$GRADLE_FILE" || true
+          echo "Dependances monetisation ajoutees"
 
       - name: Set app version
         run: |
-          VERSION_CODE=$(date +%Y%m%d%H)
           GRADLE_FILE="android/app/build.gradle"
+          VERSION_CODE=$(date +%Y%m%d%H)
           sed -i "s/versionCode .*/versionCode $VERSION_CODE/" "$GRADLE_FILE" || true
           sed -i "s/versionName .*/versionName \"1.0.0\"/" "$GRADLE_FILE" || true
           echo "Version: 1.0.0 (code: $VERSION_CODE)"
