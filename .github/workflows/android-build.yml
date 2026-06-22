@@ -1,4 +1,4 @@
-name: Build DOSCO APK
+name: Build DOSCO APK (Google Play Ready)
 
 on:
   push:
@@ -36,8 +36,15 @@ jobs:
             "bundledWebRuntime": false,
             "android": {
               "allowMixedContent": true,
-              "captureInput": true,
-              "webContentsDebuggingEnabled": false
+              "captureInput": true
+            },
+            "plugins": {
+              "SplashScreen": {
+                "launchShowDuration": 2000,
+                "backgroundColor": "#03040a",
+                "showSpinner": false,
+                "androidScaleType": "CENTER_CROP"
+              }
             }
           }
           CAPEOF
@@ -69,7 +76,7 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Configure Android network security
+      - name: Configure network security
         run: |
           mkdir -p android/app/src/main/res/xml
           cat > android/app/src/main/res/xml/network_security_config.xml << 'XMLEOF'
@@ -83,19 +90,47 @@ jobs:
             <domain-config cleartextTrafficPermitted="true">
               <domain includeSubdomains="true">localhost</domain>
               <domain includeSubdomains="true">capacitor.localhost</domain>
+              <domain includeSubdomains="true">dosco-backend-production.up.railway.app</domain>
             </domain-config>
           </network-security-config>
           XMLEOF
-          echo "network_security_config.xml créé"
+
+      - name: Add Google Play Billing dependency
+        run: |
+          GRADLE_FILE="android/app/build.gradle"
+          if ! grep -q "play-services-ads" "$GRADLE_FILE" 2>/dev/null; then
+            sed -i '/dependencies {/a\    implementation "com.android.billingclient:billing:6.0.1"' "$GRADLE_FILE" || true
+            echo "Google Play Billing ajoutee au build.gradle"
+          fi
+
+      - name: Set app version
+        run: |
+          VERSION_CODE=$(date +%Y%m%d%H)
+          GRADLE_FILE="android/app/build.gradle"
+          sed -i "s/versionCode .*/versionCode $VERSION_CODE/" "$GRADLE_FILE" || true
+          sed -i "s/versionName .*/versionName \"1.0.0\"/" "$GRADLE_FILE" || true
+          echo "Version: 1.0.0 (code: $VERSION_CODE)"
 
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      - name: Build Debug APK
+      - name: Build Release APK
+        run: cd android && ./gradlew assembleRelease --stacktrace
+
+      - name: Build Debug APK (fallback)
+        if: failure()
         run: cd android && ./gradlew assembleDebug --stacktrace
 
-      - name: Upload APK
+      - name: Upload Release APK
         uses: actions/upload-artifact@v4
+        with:
+          name: dosco-release-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
+
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: dosco-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
