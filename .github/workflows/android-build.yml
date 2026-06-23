@@ -23,22 +23,28 @@ jobs:
 
       - name: Install deps
         run: npm install
-        
+
       - name: Install TypeScript
         run: npm install -D typescript
-        
-      - name: Write capacitor.config.json
+
+      # ✅ CONFIGURATION CAPACITOR (FIX CRITIQUE)
+      - name: Write capacitor.config.js
         run: |
-          node -e "
-          require('fs').writeFileSync('capacitor.config.json', JSON.stringify({
-            appId: 'com.dosco.labatailledesetoiles',
+          cat <<EOF > capacitor.config.js
+          module.exports = {
+            appId: 'com.dosco.batailledesetoiles',
             appName: 'DOSCO',
             webDir: 'dist',
             bundledWebRuntime: false,
             server: { androidScheme: 'http' },
             android: { allowMixedContent: true }
-          }, null, 2));
-          "
+          };
+          EOF
+
+      - name: Clean old configs
+        run: |
+          rm -f capacitor.config.ts
+          rm -f capacitor.config.json
 
       - name: Prepare dist
         run: |
@@ -47,12 +53,12 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      # ✅ FIX SDK ANDROID
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-33" "build-tools;33.0.2"
 
+      # ✅ CORRECTION BUG "&&"
       - name: Add Android platform
         run: |
           [ ! -d android ] && npx cap add android || echo "exists"
@@ -63,19 +69,16 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x android/gradlew
 
-      # ✅ BUILD APK
       - name: Build APK
         run: |
           cd android
           ./gradlew assembleRelease --no-daemon --stacktrace
 
-      # ✅ BUILD AAB (IMPORTANT)
       - name: Build AAB
         run: |
           cd android
           ./gradlew bundleRelease --no-daemon --stacktrace
 
-      # ✅ SIGN APK + AAB
       - name: Sign packages
         run: |
           set -e
@@ -97,7 +100,6 @@ jobs:
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
           AAB=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -1)
 
-          # APK
           ${BT}zipalign -f -v -p 4 "$APK" aligned.apk
 
           ${BT}apksigner sign \
@@ -110,7 +112,6 @@ jobs:
 
           ${BT}apksigner verify dosco.apk
 
-          # AAB
           jarsigner \
             -keystore k.jks \
             -storepass Dosco2026 \
@@ -136,3 +137,4 @@ jobs:
         with:
           name: SAVE-KEYSTORE
           path: k.jks
+``
