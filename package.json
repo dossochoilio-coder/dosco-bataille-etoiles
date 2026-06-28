@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "mkdir -p dist && cp DOSCO_Standalone.html dist/index.html && cp -r public dist/ 2>/dev/null || true",
     "preview": "vite preview",
     "prepare-dist": "mkdir -p dist && cp DOSCO_Standalone.html dist/index.html",
     "cap:sync": "npx cap sync",
