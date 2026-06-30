@@ -1,51 +1,21 @@
 {
   "name": "dosco-bataille-etoiles",
   "version": "1.0.0",
-  "description": "DOSCO — La Bataille des Étoiles · Jeu de stratégie abstrait mobile",
-  "main": "expo-router/entry",
+  "description": "DOSCO — La Bataille des Étoiles",
+  "private": true,
   "scripts": {
-    "start":   "expo start",
-    "android": "expo start --android",
-    "ios":     "expo start --ios",
-    "web":     "expo start --web",
-    "lint":    "eslint src --ext .js,.jsx,.ts,.tsx",
-    "test":    "jest --watchAll",
-    "build:android": "eas build --platform android",
-    "build:ios":     "eas build --platform ios"
+    "dev": "vite",
+    "build": "vite build && npx cap sync android",
+    "preview": "vite preview",
+    "android": "npx cap run android",
+    "build:apk": "vite build && npx cap sync android && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
-    "expo":                         "~51.0.0",
-    "expo-router":                  "~3.5.0",
-    "expo-status-bar":              "~1.12.1",
-    "expo-font":                    "~12.0.7",
-    "expo-haptics":                 "~13.0.1",
-    "expo-av":                      "~14.0.3",
-    "expo-linear-gradient":         "~13.0.2",
-    "expo-blur":                    "~13.0.2",
-    "expo-keep-awake":              "~13.0.2",
-    "react":                        "18.2.0",
-    "react-native":                 "0.74.1",
-    "react-native-reanimated":      "~3.10.1",
-    "react-native-gesture-handler": "~2.16.1",
-    "react-native-safe-area-context":"4.10.1",
-    "react-native-screens":         "3.31.1",
-    "react-native-svg":             "15.2.0",
-    "react-native-mmkv":            "2.12.2",
-    "socket.io-client":             "^4.7.5",
-    "zustand":                      "^4.5.2",
-    "@tanstack/react-query":        "^5.40.0",
-    "lottie-react-native":          "^6.7.0",
-    "react-native-sound":           "^0.11.2",
-    "@react-native-async-storage/async-storage": "1.23.1"
+    "@capacitor/android": "^5.0.0",
+    "@capacitor/cli": "^5.0.0",
+    "@capacitor/core": "^5.0.0"
   },
   "devDependencies": {
-    "@babel/core":            "^7.24.0",
-    "@types/react":           "~18.2.79",
-    "@types/react-native":    "^0.73.0",
-    "typescript":             "^5.3.0",
-    "eslint":                 "^8.57.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "jest":                   "^29.7.0",
-    "jest-expo":              "~51.0.0"
+    "vite": "^5.0.0"
   }
 }
