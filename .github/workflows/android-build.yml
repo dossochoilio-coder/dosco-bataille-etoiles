@@ -19,13 +19,16 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: '21'
 
       - name: Install deps
         run: npm install
 
       - name: Install TypeScript
         run: npm install -D typescript
+
+      - name: Install Google Play Billing plugin
+        run: npm install @capacitor-community/in-app-purchases@^7.0.0 || npm install @capacitor-community/in-app-purchases || echo "plugin billing optionnel"
 
       - name: Write capacitor.config.js
         run: |
@@ -34,7 +37,6 @@ jobs:
             appId: 'com.dosco.batailledesetoiles',
             appName: 'DOSCO',
             webDir: 'dist',
-            bundledWebRuntime: false,
             server: { androidScheme: 'http' },
             android: { allowMixedContent: true }
           };
@@ -53,7 +55,7 @@ jobs:
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses
-          sdkmanager "platforms;android-33" "build-tools;33.0.2"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Add Android platform
         run: |
@@ -77,6 +79,35 @@ jobs:
           fi
           echo "=== Manifeste après ==="
           cat "$MANIFEST"
+
+      - name: Inject DOSCO icons (Sirus + Rigel)
+        run: |
+          if [ -d android-res ]; then
+            for dens in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+              if [ -d "android-res/mipmap-$dens" ]; then
+                mkdir -p "android/app/src/main/res/mipmap-$dens"
+                cp android-res/mipmap-$dens/*.png "android/app/src/main/res/mipmap-$dens/" 2>/dev/null || true
+              fi
+            done
+            echo "✅ Icônes DOSCO copiées dans le projet Android"
+          else
+            echo "⚠️ dossier android-res introuvable"
+          fi
+
+      - name: Force API 35 (targetSdk / compileSdk)
+        run: |
+          VARS=android/variables.gradle
+          if [ -f "$VARS" ]; then
+            echo "=== variables.gradle avant ==="
+            cat "$VARS"
+            sed -i 's/compileSdkVersion = [0-9]*/compileSdkVersion = 35/' "$VARS"
+            sed -i 's/targetSdkVersion = [0-9]*/targetSdkVersion = 35/' "$VARS"
+            echo "=== variables.gradle après ==="
+            cat "$VARS"
+            echo "✅ API 35 forcée dans variables.gradle"
+          else
+            echo "⚠️ variables.gradle introuvable"
+          fi
 
       - name: Sync Capacitor
         run: npx cap sync android
@@ -148,3 +179,4 @@ jobs:
         with:
           name: SAVE-KEYSTORE
           path: k.jks
+
